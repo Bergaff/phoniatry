@@ -680,4 +680,12 @@ def main():
                 st.download_button(
                     label="Скачать данные графика в CSV",
                     data=csv,
-                    file_name=f"{base_name}_vowel
+                    file_name=f"{base_name}_vowel_formants_data.csv",  # Fixed f-string
+                    mime="text/csv"
+                )
+                
+                html_path_3d = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_3d_with_polygons.html")
+                fig_3d.write_html(html_path_3d)
+
+if __name__ == "__main__":
+    main()
