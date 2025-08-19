@@ -10,6 +10,7 @@ import math
 import re
 import random
 import streamlit as st
+import io
 
 # --- Константы ---
 OUTPUT_DIR = "./SpeechViz3D"
@@ -377,7 +378,7 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
                     x=hull_x, y=hull_y, z=hull_z,
                     mode='lines', line=dict(color=color, width=5),
                     name=f'Плоскость "{vowel}" (Площадь: {area:.2f})',
-                    hoverinfo='name', showlegend=True
+                    hoverinfo='name', showlegend=True, visible='legendonly'
                 ))
 
                 section_x = hull_x[:-1] + [center_x, hull_x[0]]
@@ -421,7 +422,7 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
                     i=i_list, j=j_list, k=k_list,
                     color=color, opacity=0.3,
                     name=f'Область "{vowel}"',
-                    hoverinfo='name', showlegend=True, visible='legendonly'
+                    hoverinfo='name', showlegend=True
                 ))
 
                 below_x, below_y, below_z = [], [], []
@@ -519,7 +520,7 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
             name=f'Спуск "{vowel}"',
             hoverinfo='text',
             hovertext=f'Фонема: {vowel}<br>F1: {center_x:.2f}<br>F2: {center_y:.2f}<br>Норм. лог. тон: {norm_log_pitch:.2f}',
-            showlegend=True
+            showlegend=True, visible='legendonly'
         ))
 
         if len(group) > 1:
@@ -587,9 +588,10 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
                 type="dropdown",
                 direction="down",
                 x=0.5,
-                y=-0.2,
+                y=1.1,
                 xanchor="center",
                 yanchor="top",
+                pad={"r": 100, "l": 100},
                 showactive=True,
                 buttons=buttons
             )
@@ -597,13 +599,13 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
         title=f'3D-карта гласных (норм. длительность) - {base_name}',
         scene=dict(
             xaxis_title='F1 (Гц)', yaxis_title='F2 (Гц)', zaxis_title='Норм. длительность (с)',
-            xaxis=dict(autorange="reversed", range=[min(df['F1']) * 0.9, max(df['F1']) * 1.1]),
+            xaxis=dict(autorange="reversed", range=[min(df['F1']) * 0.8, max(df['F1']) * 1.2]),
             yaxis=dict(autorange="reversed", range=[min(df['F2']) * 0.9, max(df['F2']) * 1.1]),
             zaxis=dict(range=[0, max_scaled_duration * 1.2]),
             camera=dict(eye=dict(x=1.5, y=1.5, z=1.0))
         ),
-        width=1600, height=1000, showlegend=True,
-        margin=dict(l=150, r=150, t=150, b=200)
+        width=1800, height=1000, showlegend=True,
+        margin=dict(l=200, r=150, t=150, b=200)
     )
     return fig
 
@@ -635,6 +637,23 @@ def main():
                 if fig_vowel_count:
                     st.plotly_chart(fig_vowel_count)
                 
+                # Добавление кнопки для скачивания CSV первого графика
+                df_vowel_count = pd.DataFrame({
+                    'vowel': [v for v in vowel_order if v in plot_data_dict],
+                    'avg_F1': [plot_data_dict[v]['avg_F1'] for v in vowel_order if v in plot_data_dict],
+                    'avg_F2': [plot_data_dict[v]['avg_F2'] for v in vowel_order if v in plot_data_dict],
+                    'count': [plot_data_dict[v]['count'] for v in vowel_order if v in plot_data_dict],
+                    'avg_intensity': [plot_data_dict[v]['avg_intensity'] for v in vowel_order if v in plot_data_dict],
+                    'avg_energy': [plot_data_dict[v]['avg_energy'] for v in vowel_order if v in plot_data_dict]
+                })
+                csv = df_vowel_count.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Скачать данные графика в CSV",
+                    data=csv,
+                    file_name=f"{base_name}_vowel_count_data.csv",
+                    mime="text/csv"
+                )
+                
                 html_path_vowel_count = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_count_3d_precise.html")
                 fig_vowel_count.write_html(html_path_vowel_count)
                 
@@ -652,6 +671,16 @@ def main():
                 fig_3d = plot_3d_with_polygons(vowel_data, audio_path)
                 if fig_3d:
                     st.plotly_chart(fig_3d)
+                
+                # Добавление кнопки для скачивания CSV третьего графика
+                df_vowel_discrete = pd.DataFrame(vowel_data)[['vowel', 'F1', 'F2', 'duration', 'mean_pitch', 'mean_intensity', 'total_energy']]
+                csv = df_vowel_discrete.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="Скачать данные графика в CSV",
+                    data=csv,
+                    file_name=f"{base_name}_vowel_discrete_data.csv",
+                    mime="text/csv"
+                )
                 
                 html_path_polygons = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_discrete.html")
                 fig_3d.write_html(html_path_polygons)
