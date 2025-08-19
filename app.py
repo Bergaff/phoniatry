@@ -81,6 +81,7 @@ def analyze_vowel_segments(audio_path, transcription_segments):
     """Анализирует гласные и возвращает акустические характеристики."""
     J_DURATION = 0.04
     vowel_data = []
+    phoneme_log_data = []
     try:
         sound = parselmouth.Sound(audio_path)
         formant_obj = sound.to_formant_burg()
@@ -88,10 +89,10 @@ def analyze_vowel_segments(audio_path, transcription_segments):
         intensity_obj = sound.to_intensity()
     except Exception as e:
         st.error(f"КРИТИЧЕСКАЯ ОШИБКА: Не удалось обработать аудиофайл: {e}")
-        return []
+        return [], []
     if not transcription_segments:
         st.error("Список транскрибированных сегментов пуст.")
-        return []
+        return [], []
     for segment in transcription_segments:
         word, word_start, word_end = segment['word'], segment['start'], segment['end']
         phonemes_in_word = extract_phonemes(word)
@@ -119,10 +120,53 @@ def analyze_vowel_segments(audio_path, transcription_segments):
                     'duration': duration, 'mean_pitch': median_pitch, 'mean_intensity': median_intensity,
                     'start_time': vowel_segment_start, 'end_time': vowel_segment_end, 'total_energy': total_energy
                 })
-                st.write(f"Фонема '{phoneme}' в слове '{word}': F1={median_f1:.2f}, F2={median_f2:.2f}, Длит-сть={duration:.2f}, Тон={median_pitch:.2f} Гц, Интенсивность={median_intensity:.2f} дБ, Энергия={total_energy:.6f} Pa^2·sec")
+                phoneme_log_data.append({
+                    'vowel': phoneme, 'word': word, 'F1': median_f1, 'F2': median_f2,
+                    'duration': duration, 'mean_pitch': median_pitch, 'mean_intensity': median_intensity,
+                    'total_energy': total_energy
+                })
             current_time = vowel_segment_end
     st.write(f"Всего данных о гласных собрано: {len(vowel_data)}")
-    return vowel_data
+    return vowel_data, phoneme_log_data
+
+def save_phoneme_data(vowel_data, phoneme_log_data, audio_path):
+    """Сохраняет данные фонем и высших точек в CSV."""
+    base_name = os.path.splitext(os.path.basename(audio_path))[0]
+    phoneme_csv_path = os.path.join(OUTPUT_DIR, f'{base_name}_phoneme_data.csv')
+    
+    # Подготовка данных о фонемах
+    phoneme_df = pd.DataFrame(phoneme_log_data)
+    
+    # Подготовка данных о высших точках
+    df = pd.DataFrame(vowel_data)
+    highest_points = []
+    for vowel, group in df.groupby('vowel'):
+        max_duration_value = group['duration'].max()
+        max_duration_rows = group[group['duration'] == max_duration_value]
+        highest_point = max_duration_rows.sample(n=1, random_state=random.randint(0, 1000)).iloc[0] if len(max_duration_rows) > 1 else max_duration_rows.iloc[0]
+        log_pitch = np.log(max(highest_point['mean_pitch'], 1))
+        max_log_pitch = df['mean_pitch'].apply(lambda x: np.log(max(x, 1))).max()
+        min_log_pitch = df['mean_pitch'].apply(lambda x: np.log(max(x, 1))).min()
+        log_pitch_range = max_log_pitch - min_log_pitch if max_log_pitch != min_log_pitch else 1
+        norm_log_pitch = (log_pitch - min_log_pitch) / log_pitch_range
+        max_energy = df['total_energy'].max()
+        min_energy = df['total_energy'].min()
+        energy_range = max_energy - min_energy if max_energy != min_energy else 1
+        norm_energy = (highest_point['total_energy'] - min_energy) / energy_range
+        highest_points.append({
+            'vowel': vowel,
+            'highest_point': True,
+            'mean_pitch': highest_point['mean_pitch'],
+            'log_pitch': log_pitch,
+            'norm_log_pitch': norm_log_pitch,
+            'total_energy': highest_point['total_energy'],
+            'norm_energy': norm_energy
+        })
+    highest_df = pd.DataFrame(highest_points)
+    
+    # Объединение данных
+    combined_df = pd.concat([phoneme_df, highest_df], ignore_index=True, sort=False)
+    combined_df.to_csv(phoneme_csv_path, index=False, float_format='%.6f')
 
 def plot_3d_vowel_count(vowel_data, audio_filename):
     """Создает 3D-график, соединяя пики линий в порядке и-ы-у-о-а-э-и."""
@@ -310,13 +354,6 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
         max_duration_value = group['duration'].max()
         max_duration_rows = group[group['duration'] == max_duration_value]
         highest_point = max_duration_rows.sample(n=1, random_state=random.randint(0, 1000)).iloc[0] if len(max_duration_rows) > 1 else max_duration_rows.iloc[0]
-
-        st.write(f"Фонема '{vowel}' (высшая точка по длительности):")
-        st.write(f"  Тон (mean_pitch): {highest_point['mean_pitch']:.2f} Гц")
-        st.write(f"  Логарифм тона (log_pitch): {highest_point['log_pitch']:.4f}")
-        st.write(f"  Нормализованный логарифм тона (norm_log_pitch): {highest_point['norm_log_pitch']:.4f}")
-        st.write(f"  Энергия (total_energy): {highest_point['total_energy']:.6f} Pa^2·sec")
-        st.write(f"  Нормализованная энергия (norm_energy): {highest_point['norm_energy']:.4f}")
 
         center_x = highest_point['F1']
         center_y = highest_point['F2']
@@ -550,7 +587,7 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
                 type="dropdown",
                 direction="down",
                 x=0.5,
-                y=-0.15,
+                y=-0.2,
                 xanchor="center",
                 yanchor="top",
                 showactive=True,
@@ -565,8 +602,8 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
             zaxis=dict(range=[0, max_scaled_duration * 1.2]),
             camera=dict(eye=dict(x=1.5, y=1.5, z=1.0))
         ),
-        width=1400, height=900, showlegend=True,
-        margin=dict(l=100, r=100, t=100, b=150)
+        width=1600, height=1000, showlegend=True,
+        margin=dict(l=150, r=150, t=150, b=200)
     )
     return fig
 
@@ -584,12 +621,13 @@ def main():
         
         if transcription_segments:
             st.write("\nНачинаем акустический анализ для сбора данных о формантах, длительности и тоне...")
-            vowel_data = analyze_vowel_segments(audio_path, transcription_segments)
+            vowel_data, phoneme_log_data = analyze_vowel_segments(audio_path, transcription_segments)
             
             if vowel_data:
                 base_name = os.path.splitext(os.path.basename(audio_path))[0]
                 csv_path = os.path.join(OUTPUT_DIR, f'{base_name}_vowel_formants_params_raw.csv')
                 pd.DataFrame(vowel_data).to_csv(csv_path, index=False, float_format='%.4f')
+                save_phoneme_data(vowel_data, phoneme_log_data, audio_path)
                 
                 # Построение 3D-графика количества гласных
                 st.subheader("3D-карта количества гласных (и-ы-у-о-а-э-и)")
