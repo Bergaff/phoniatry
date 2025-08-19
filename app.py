@@ -174,7 +174,7 @@ def plot_3d_vowel_count(vowel_data, audio_filename):
     base_name = os.path.splitext(os.path.basename(audio_filename))[0]
     if not vowel_data:
         st.error("Нет данных для построения графика количества гласных.")
-        return None
+        return None, None
 
     vowel_order = ['и', 'ы', 'у', 'о', 'а', 'э']
     df = pd.DataFrame(vowel_data)
@@ -203,7 +203,7 @@ def plot_3d_vowel_count(vowel_data, audio_filename):
 
     if not plot_data_dict:
         st.error("Нет данных для построения графика количества гласных.")
-        return None
+        return None, None
 
     x_coords, y_coords, z_heights, vowel_labels, marker_sizes = [], [], [], [], []
     hover_texts = []
@@ -289,7 +289,7 @@ def plot_3d_vowel_count(vowel_data, audio_filename):
         ),
         width=1200, height=900, showlegend=True
     )
-    return fig
+    return fig, plot_data_dict
 
 def plot_vowel_histogram(vowel_data):
     """Строит гистограмму количества гласных."""
@@ -633,26 +633,28 @@ def main():
                 
                 # Построение 3D-графика количества гласных
                 st.subheader("3D-карта количества гласных (и-ы-у-о-а-э-и)")
-                fig_vowel_count = plot_3d_vowel_count(vowel_data, audio_path)
+                fig_vowel_count, plot_data_dict = plot_3d_vowel_count(vowel_data, audio_path)
                 if fig_vowel_count:
                     st.plotly_chart(fig_vowel_count)
                 
                 # Добавление кнопки для скачивания CSV первого графика
-                df_vowel_count = pd.DataFrame({
-                    'vowel': [v for v in vowel_order if v in plot_data_dict],
-                    'avg_F1': [plot_data_dict[v]['avg_F1'] for v in vowel_order if v in plot_data_dict],
-                    'avg_F2': [plot_data_dict[v]['avg_F2'] for v in vowel_order if v in plot_data_dict],
-                    'count': [plot_data_dict[v]['count'] for v in vowel_order if v in plot_data_dict],
-                    'avg_intensity': [plot_data_dict[v]['avg_intensity'] for v in vowel_order if v in plot_data_dict],
-                    'avg_energy': [plot_data_dict[v]['avg_energy'] for v in vowel_order if v in plot_data_dict]
-                })
-                csv = df_vowel_count.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Скачать данные графика в CSV",
-                    data=csv,
-                    file_name=f"{base_name}_vowel_count_data.csv",
-                    mime="text/csv"
-                )
+                if plot_data_dict:
+                    vowel_order = ['и', 'ы', 'у', 'о', 'а', 'э']
+                    df_vowel_count = pd.DataFrame({
+                        'vowel': [v for v in vowel_order if v in plot_data_dict],
+                        'avg_F1': [plot_data_dict[v]['avg_F1'] for v in vowel_order if v in plot_data_dict],
+                        'avg_F2': [plot_data_dict[v]['avg_F2'] for v in vowel_order if v in plot_data_dict],
+                        'count': [plot_data_dict[v]['count'] for v in vowel_order if v in plot_data_dict],
+                        'avg_intensity': [plot_data_dict[v]['avg_intensity'] for v in vowel_order if v in plot_data_dict],
+                        'avg_energy': [plot_data_dict[v]['avg_energy'] for v in vowel_order if v in plot_data_dict]
+                    })
+                    csv = df_vowel_count.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="Скачать данные графика в CSV",
+                        data=csv,
+                        file_name=f"{base_name}_vowel_count_data.csv",
+                        mime="text/csv"
+                    )
                 
                 html_path_vowel_count = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_count_3d_precise.html")
                 fig_vowel_count.write_html(html_path_vowel_count)
