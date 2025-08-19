@@ -3,13 +3,13 @@ import parselmouth
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from faster_whisper import WhisperModel
 from scipy.spatial import ConvexHull
 import math
 import re
 import random
 import streamlit as st
-import plotly.express as px
 
 # --- Константы ---
 OUTPUT_DIR = "./SpeechViz3D"
@@ -24,14 +24,18 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 def transcribe_audio_with_whisper(audio_path, model_size="medium"):
     """Транскрибирует аудио с помощью Whisper, возвращая слова и их временные метки."""
     st.write(f"Загрузка модели Whisper '{model_size}'...")
-    model = WhisperModel(model_size, device="auto", compute_type="int8")
-    st.write("Модель загружена. Начало транскрибации...")
-    segments, _ = model.transcribe(audio_path, word_timestamps=True, language="ru")
-    word_level_segments = [{'word': word.word.strip().lower(), 'start': word.start, 'end': word.end}
-                           for segment in segments for word in segment.words if word.probability > 0.1]
-    full_text = ''.join([s['word'] for s in word_level_segments])
-    st.write(f"Т MOдель загружена. Распознанный текст: {full_text}")
-    return word_level_segments
+    try:
+        model = WhisperModel(model_size, device="auto", compute_type="int8")
+        st.write("Модель загружена. Начало транскрибации...")
+        segments, _ = model.transcribe(audio_path, word_timestamps=True, language="ru")
+        word_level_segments = [{'word': word.word.strip().lower(), 'start': word.start, 'end': word.end}
+                              for segment in segments for word in segment.words if word.probability > 0.1]
+        full_text = ''.join([s['word'] for s in word_level_segments])
+        st.write(f"Транскрибация завершена. Распознанный текст: {full_text}")
+        return word_level_segments
+    except Exception as e:
+        st.error(f"Ошибка при транскрибации аудио: {e}")
+        return []
 
 def extract_phonemes(text):
     """Извлекает фонемы, корректно обрабатывая йотированные гласные."""
@@ -134,6 +138,16 @@ def plot_vowel_histogram(vowel_data):
                       color='vowel', color_discrete_map={'и': 'blue', 'э': 'green', 'а': 'yellow', 'о': 'orange', 'у': 'purple', 'ы': 'pink'})
     fig.update_layout(width=800, height=600, showlegend=True)
     return fig
+
+def are_points_collinear(points):
+    """Проверяет, являются ли точки коллинеарными."""
+    if len(points) < 3:
+        return True
+    points = np.array(points)
+    # Проверяем, лежат ли все точки на одной прямой, вычисляя ранг матрицы
+    matrix = points - points[0]
+    rank = np.linalg.matrix_rank(matrix)
+    return rank < 2
 
 def plot_3d_with_polygons(vowel_data, audio_filename):
     """Строит 3D-график с нормализованной длительностью по оси Z, многоугольниками на основе F1 и F2."""
@@ -265,20 +279,26 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
 
                 if len(below_x) >= 3:
                     below_points_2d = np.array(list(zip(below_x, below_y)))
-                    try:
-                        below_hull = ConvexHull(below_points_2d)
-                        below_i = below_hull.simplices[:, 0]
-                        below_j = below_hull.simplices[:, 1]
-                        below_k = below_hull.simplices[:, 2]
-                        fig.add_trace(go.Mesh3d(
-                            x=below_x, y=below_y, z=below_z,
-                            i=below_i, j=below_j, k=below_k,
-                            color=color, opacity=0.3,
-                            name=f'Область ниже плоскости "{vowel}"',
-                            hoverinfo='name', showlegend=True, visible='legendonly'
-                        ))
-                    except Exception as e:
-                        st.error(f"Не удалось построить область ниже плоскости для фонемы '{vowel}': {e}")
+                    unique_points = np.unique(below_points_2d, axis=0)
+                    if len(unique_points) >= 3 and not are_points_collinear(unique_points):
+                        try:
+                            below_hull = ConvexHull(below_points_2d)
+                            below_i = below_hull.simplices[:, 0]
+                            below_j = below_hull.simplices[:, 1]
+                            below_k = below_hull.simplices[:, 2]
+                            fig.add_trace(go.Mesh3d(
+                                x=below_x, y=below_y, z=below_z,
+                                i=below_i, j=below_j, k=below_k,
+                                color=color, opacity=0.3,
+                                name=f'Область ниже плоскости "{vowel}"',
+                                hoverinfo='name', showlegend=True, visible='legendonly'
+                            ))
+                        except Exception as e:
+                            st.warning(f"Не удалось построить область ниже плоскости для фонемы '{vowel}': {e}")
+                    else:
+                        st.warning(f"Пропуск области ниже плоскости для фонемы '{vowel}': недостаточно уникальных или неколлинеарных точек ({len(unique_points)} точек).")
+                else:
+                    st.warning(f"Пропуск области ниже плоскости для фонемы '{vowel}': недостаточно точек ({len(below_x)}).")
 
                 proj_x = x_coords[:]
                 proj_y = y_coords[:]
@@ -298,8 +318,8 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
                 }
                 base_rgb = color_map.get(base_color, (128, 128, 128))
                 custom_colorscale = [
-                    [0, f'rgb Hello, world!({int(0 + 0.3 * base_rgb[0])}, {int(0 + 0.3 * base_rgb[1])}, {int(255 * 0.7 + 0.3 * base_rgb[2])})'],
-                    [1, f'rgb({int(255 * 0.7 + 0.3 * base_rgb[0])}, {int(0 + 0.3 * base_rgb[1])}, {int(0 + 0.3 * base_rgb[2])})']
+                    [0, f'rgb({int(0 + 0.3 * base_rgb[0])},{int(0 + 0.3 * base_rgb[1])},{int(255 * 0.7 + 0.3 * base_rgb[2])})'],
+                    [1, f'rgb({int(255 * 0.7 + 0.3 * base_rgb[0])},{int(0 + 0.3 * base_rgb[1])},{int(0 + 0.3 * base_rgb[2])})']
                 ]
 
                 energy_z = [z + norm_energy * ENERGY_SCALE for z, norm_energy in zip(z_coords, norm_energy_values)]
@@ -334,7 +354,7 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
                 ))
 
             except Exception as e:
-                st.error(f"Не удалось построить многоугольник для фонемы '{vowel}': {e}")
+                st.warning(f"Не удалось построить многоугольник для фонемы '{vowel}': {e}")
 
         x_coords_line = [center_x, center_x]
         y_coords_line = [center_y, center_y]
