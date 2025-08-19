@@ -167,7 +167,7 @@ def save_phoneme_data(vowel_data, phoneme_log_data, audio_path):
     
     # Объединение данных
     combined_df = pd.concat([phoneme_df, highest_df], ignore_index=True, sort=False)
-    combined_df.to_csv(phoneme_csv_path, index=False, float_format='%.6f')
+    combined_df.to_csv(phoneme_csv_path, index=False, float_format='%.6f', encoding='utf-8-sig')
 
 def plot_3d_vowel_count(vowel_data, audio_filename):
     """Создает 3D-график, соединяя пики линий в порядке и-ы-у-о-а-э-и."""
@@ -628,7 +628,7 @@ def main():
             if vowel_data:
                 base_name = os.path.splitext(os.path.basename(audio_path))[0]
                 csv_path = os.path.join(OUTPUT_DIR, f'{base_name}_vowel_formants_params_raw.csv')
-                pd.DataFrame(vowel_data).to_csv(csv_path, index=False, float_format='%.4f')
+                pd.DataFrame(vowel_data).to_csv(csv_path, index=False, float_format='%.4f', encoding='utf-8-sig')
                 save_phoneme_data(vowel_data, phoneme_log_data, audio_path)
                 
                 # Построение 3D-графика количества гласных
@@ -648,7 +648,7 @@ def main():
                         'avg_intensity': [plot_data_dict[v]['avg_intensity'] for v in vowel_order if v in plot_data_dict],
                         'avg_energy': [plot_data_dict[v]['avg_energy'] for v in vowel_order if v in plot_data_dict]
                     })
-                    csv = df_vowel_count.to_csv(index=False).encode('utf-8')
+                    csv = df_vowel_count.to_csv(index=False).encode('utf-8-sig')
                     st.download_button(
                         label="Скачать данные графика в CSV",
                         data=csv,
@@ -676,22 +676,8 @@ def main():
                 
                 # Добавление кнопки для скачивания CSV третьего графика
                 df_vowel_discrete = pd.DataFrame(vowel_data)[['vowel', 'F1', 'F2', 'duration', 'mean_pitch', 'mean_intensity', 'total_energy']]
-                csv = df_vowel_discrete.to_csv(index=False).encode('utf-8')
+                csv = df_vowel_discrete.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     label="Скачать данные графика в CSV",
                     data=csv,
-                    file_name=f"{base_name}_vowel_discrete_data.csv",
-                    mime="text/csv"
-                )
-                
-                html_path_polygons = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_discrete.html")
-                fig_3d.write_html(html_path_polygons)
-            else:
-                st.error("\nНе удалось извлечь данные о гласных для анализа.")
-        else:
-            st.error("\nНе удалось транскрибировать аудио.")
-    else:
-        st.info("Пожалуйста, загрузите WAV-аудиофайл для анализа.")
-
-if __name__ == "__main__":
-    main()
+                    file_name=f"{base_name}_vowel
