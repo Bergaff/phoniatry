@@ -134,7 +134,7 @@ def plot_3d_vowel_count(vowel_data, audio_filename):
     vowel_order = ['и', 'ы', 'у', 'о', 'а', 'э']
     df = pd.DataFrame(vowel_data)
     
-    aggregated_data = {vowel: {'F1': [], 'F2': [], 'mean_intensity': [], 'mean_pitch': []} for vowel in vowel_order}
+    aggregated_data = {vowel: {'F1': [], 'F2': [], 'mean_intensity': [], 'mean_pitch': [], 'total_energy': []} for vowel in vowel_order}
     for item in vowel_data:
         vowel = item['vowel']
         if vowel in vowel_order:
@@ -142,6 +142,7 @@ def plot_3d_vowel_count(vowel_data, audio_filename):
             aggregated_data[vowel]['F2'].append(item['F2'])
             aggregated_data[vowel]['mean_intensity'].append(item['mean_intensity'])
             aggregated_data[vowel]['mean_pitch'].append(item['mean_pitch'])
+            aggregated_data[vowel]['total_energy'].append(item['total_energy'])
 
     plot_data_dict = {}
     for vowel in vowel_order:
@@ -151,6 +152,7 @@ def plot_3d_vowel_count(vowel_data, audio_filename):
                 'avg_F2': np.mean(aggregated_data[vowel]['F2']),
                 'avg_intensity': np.mean(aggregated_data[vowel]['mean_intensity']),
                 'avg_pulses': np.mean(aggregated_data[vowel]['mean_pitch']) * np.mean([item['duration'] for item in vowel_data if item['vowel'] == vowel]),
+                'avg_energy': np.mean(aggregated_data[vowel]['total_energy']),
                 'count': len(aggregated_data[vowel]['F1'])
             }
 
@@ -178,7 +180,7 @@ def plot_3d_vowel_count(vowel_data, audio_filename):
             vowel_labels.append(vowel)
             marker_sizes.append(normalize_intensity(data['avg_intensity'], min_intensity, max_intensity))
 
-            hover_text = f"Фонема: {vowel}<br>Количество: {data['count']}<br>F1: {data['avg_F1']:.0f} Гц<br>F2: {data['avg_F2']:.0f} Гц<br>Энергия: {data['avg_intensity']:.1f} дБ<br>Импульсы: {data['avg_pulses']:.0f}"
+            hover_text = f"Фонема: {vowel}<br>Количество: {data['count']}<br>F1: {data['avg_F1']:.0f} Гц<br>F2: {data['avg_F2']:.0f} Гц<br>Интенсивность: {data['avg_intensity']:.1f} дБ<br>Энергия: {data['avg_energy']:.6f} Pa²·sec<br>Импульсы: {data['avg_pulses']:.0f}"
             hover_texts.append(hover_text)
 
     if len(x_coords) > 0:
@@ -254,7 +256,7 @@ def plot_vowel_histogram(vowel_data):
     vowel_counts.columns = ['vowel', 'count']
     
     fig = px.histogram(vowel_counts, x='vowel', y='count', title='Распределение гласных',
-                      labels={'vowel': 'Гласная', 'count': 'Количество'},
+                      labels={'vowel': 'Гласная', 'count': 'Количество фонем'},
                       color='vowel', color_discrete_map={'и': 'blue', 'э': 'green', 'а': 'yellow', 'о': 'orange', 'у': 'purple', 'ы': 'pink'})
     fig.update_layout(width=1200, height=900, showlegend=True)
     return fig
@@ -545,21 +547,26 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
     fig.update_layout(
         updatemenus=[
             dict(
-                type="buttons",
-                direction="right",
+                type="dropdown",
+                direction="down",
                 x=0.5,
-                y=-0.1,
+                y=-0.15,
                 xanchor="center",
                 yanchor="top",
+                showactive=True,
                 buttons=buttons
             )
         ],
         title=f'3D-карта гласных (норм. длительность) - {base_name}',
         scene=dict(
             xaxis_title='F1 (Гц)', yaxis_title='F2 (Гц)', zaxis_title='Норм. длительность (с)',
-            xaxis=dict(autorange="reversed"), yaxis=dict(autorange="reversed"), zaxis=dict(range=[0, max_scaled_duration * 1.2]),
-            camera=dict(eye=dict(x=1.5, y=1.5, z=1.0))),
-        width=1200, height=900, showlegend=True
+            xaxis=dict(autorange="reversed", range=[min(df['F1']) * 0.9, max(df['F1']) * 1.1]),
+            yaxis=dict(autorange="reversed", range=[min(df['F2']) * 0.9, max(df['F2']) * 1.1]),
+            zaxis=dict(range=[0, max_scaled_duration * 1.2]),
+            camera=dict(eye=dict(x=1.5, y=1.5, z=1.0))
+        ),
+        width=1400, height=900, showlegend=True,
+        margin=dict(l=100, r=100, t=100, b=150)
     )
     return fig
 
@@ -583,7 +590,6 @@ def main():
                 base_name = os.path.splitext(os.path.basename(audio_path))[0]
                 csv_path = os.path.join(OUTPUT_DIR, f'{base_name}_vowel_formants_params_raw.csv')
                 pd.DataFrame(vowel_data).to_csv(csv_path, index=False, float_format='%.4f')
-                st.write(f"\nВсе измерения сохранены в: {csv_path}")
                 
                 # Построение 3D-графика количества гласных
                 st.subheader("3D-карта количества гласных (и-ы-у-о-а-э-и)")
@@ -593,7 +599,6 @@ def main():
                 
                 html_path_vowel_count = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_count_3d_precise.html")
                 fig_vowel_count.write_html(html_path_vowel_count)
-                st.write(f"\nИнтерактивный график количества гласных сохранен в: {html_path_vowel_count}")
                 
                 # Построение гистограммы
                 st.subheader("Гистограмма количества гласных")
@@ -603,7 +608,6 @@ def main():
                 
                 html_path_histogram = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_histogram.html")
                 hist_fig.write_html(html_path_histogram)
-                st.write(f"\nИнтерактивная гистограмма сохранена в: {html_path_histogram}")
                 
                 # Построение 3D-графика с многоугольниками
                 st.subheader("3D-карта гласных (нормализованная длительность)")
@@ -613,7 +617,6 @@ def main():
                 
                 html_path_polygons = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_discrete.html")
                 fig_3d.write_html(html_path_polygons)
-                st.write(f"\nИнтерактивный график с многоугольниками и срезами сохранен в: {html_path_polygons}")
             else:
                 st.error("\nНе удалось извлечь данные о гласных для анализа.")
         else:
