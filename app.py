@@ -144,7 +144,6 @@ def are_points_collinear(points):
     if len(points) < 3:
         return True
     points = np.array(points)
-    # Проверяем, лежат ли все точки на одной прямой, вычисляя ранг матрицы
     matrix = points - points[0]
     rank = np.linalg.matrix_rank(matrix)
     return rank < 2
@@ -448,6 +447,126 @@ def plot_3d_with_polygons(vowel_data, audio_filename):
     )
     return fig
 
+def plot_3d_vowel_count(vowel_data, audio_filename):
+    """Создает 3D-график, соединяя пики линий в порядке и-ы-у-о-а-э-и."""
+    base_name = os.path.splitext(os.path.basename(audio_filename))[0]
+    if not vowel_data:
+        st.error("Нет данных для построения графика количества гласных.")
+        return None
+
+    vowel_order = ['и', 'ы', 'у', 'о', 'а', 'э']
+    df = pd.DataFrame(vowel_data)
+    
+    aggregated_data = {vowel: {'F1': [], 'F2': [], 'mean_intensity': [], 'mean_pitch': []} for vowel in vowel_order}
+    for item in vowel_data:
+        vowel = item['vowel']
+        if vowel in vowel_order:
+            aggregated_data[vowel]['F1'].append(item['F1'])
+            aggregated_data[vowel]['F2'].append(item['F2'])
+            aggregated_data[vowel]['mean_intensity'].append(item['mean_intensity'])
+            aggregated_data[vowel]['mean_pitch'].append(item['mean_pitch'])
+
+    plot_data_dict = {}
+    for vowel in vowel_order:
+        if aggregated_data[vowel]['F1']:
+            plot_data_dict[vowel] = {
+                'avg_F1': np.mean(aggregated_data[vowel]['F1']),
+                'avg_F2': np.mean(aggregated_data[vowel]['F2']),
+                'avg_intensity': np.mean(aggregated_data[vowel]['mean_intensity']),
+                'avg_pulses': np.mean(aggregated_data[vowel]['mean_pitch']) * np.mean([item['duration'] for item in vowel_data if item['vowel'] == vowel]),
+                'count': len(aggregated_data[vowel]['F1'])
+            }
+
+    if not plot_data_dict:
+        st.error("Нет данных для построения графика количества гласных.")
+        return None
+
+    x_coords, y_coords, z_heights, vowel_labels, marker_sizes = [], [], [], [], []
+    hover_texts = []
+
+    all_intensities = [data['avg_intensity'] for data in plot_data_dict.values()]
+    min_intensity = min(all_intensities) if all_intensities else 0
+    max_intensity = max(all_intensities) if all_intensities else 1
+
+    def normalize_intensity(val, min_val, max_val, scale_min=10, scale_max=40):
+        if max_val == min_val: return scale_min
+        return scale_min + (val - min_val) / (max_val - min_val) * (scale_max - scale_min)
+
+    for vowel in vowel_order:
+        if vowel in plot_data_dict and plot_data_dict[vowel]:
+            data = plot_data_dict[vowel]
+            x_coords.append(data['avg_F1'])
+            y_coords.append(data['avg_F2'])
+            z_heights.append(data['count'])
+            vowel_labels.append(vowel)
+            marker_sizes.append(normalize_intensity(data['avg_intensity'], min_intensity, max_intensity))
+
+            hover_text = f"Фонема: {vowel}<br>Количество: {data['count']}<br>F1: {data['avg_F1']:.0f} Гц<br>F2: {data['avg_F2']:.0f} Гц<br>Энергия: {data['avg_intensity']:.1f} дБ<br>Импульсы: {data['avg_pulses']:.0f}"
+            hover_texts.append(hover_text)
+
+    if len(x_coords) > 0:
+        x_coords.append(x_coords[0])
+        y_coords.append(y_coords[0])
+        z_heights.append(z_heights[0])
+
+    lines_list = []
+    for i in range(len(vowel_labels)):
+        x, y, z = x_coords[i], y_coords[i], z_heights[i]
+        line = go.Scatter3d(
+            x=[x, x], y=[y, y], z=[0, z], mode='lines',
+            line=dict(color='gray', width=5),
+            hoverinfo='none',
+            showlegend=False
+        )
+        lines_list.append(line)
+
+    scatter_plot_base = go.Scatter3d(
+        x=x_coords[:-1],
+        y=y_coords[:-1],
+        z=[0] * len(x_coords[:-1]),
+        mode='markers+text',
+        marker=dict(
+            size=marker_sizes,
+            color=np.arange(len(x_coords[:-1])),
+            colorscale='Viridis',
+            sizemode='diameter',
+            sizeref=max(marker_sizes) / 50 if max(marker_sizes) > 0 else 1
+        ),
+        text=[f"Фонема: {v}" for v in vowel_labels],
+        textposition="bottom center",
+        hoverinfo='text',
+        hovertext=hover_texts,
+        name='Гласные фонемы'
+    )
+
+    connecting_line = go.Scatter3d(
+        x=x_coords,
+        y=y_coords,
+        z=z_heights,
+        mode='lines+markers',
+        line=dict(color='red', width=5),
+        marker=dict(size=5, color='red'),
+        name='Последовательность и-ы-у-о-а-э-и',
+        hoverinfo='none'
+    )
+
+    fig = go.Figure(data=lines_list + [scatter_plot_base, connecting_line])
+
+    max_z = max(z_heights) if z_heights else 1
+    fig.update_layout(
+        title=f'Точный анализ гласных фонем - {base_name}',
+        scene=dict(
+            xaxis_title='Форманта F1 (Гц)',
+            yaxis_title='Форманта F2 (Гц)',
+            zaxis_title='Количество фонем',
+            xaxis=dict(autorange="reversed"),
+            yaxis=dict(autorange="reversed"),
+            zaxis=dict(range=[0, max_z + 1])
+        ),
+        width=1000, height=800, showlegend=True
+    )
+    return fig
+
 def main():
     st.title("Анализ и визуализация гласных в аудио")
     uploaded_file = st.file_uploader("Выберите WAV-аудиофайл", type=["wav"])
@@ -476,15 +595,25 @@ def main():
                 if hist_fig:
                     st.plotly_chart(hist_fig)
                 
-                # Построение 3D-графика
-                st.subheader("3D-карта гласных")
+                # Построение 3D-графика с многоугольниками
+                st.subheader("3D-карта гласных (нормализованная длительность)")
                 fig_3d = plot_3d_with_polygons(vowel_data, audio_path)
                 if fig_3d:
                     st.plotly_chart(fig_3d)
                 
-                html_path = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_discrete.html")
-                fig_3d.write_html(html_path)
-                st.write(f"\nИнтерактивный график с многоугольниками и срезами сохранен в: {html_path}")
+                html_path_polygons = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_discrete.html")
+                fig_3d.write_html(html_path_polygons)
+                st.write(f"\nИнтерактивный график с многоугольниками и срезами сохранен в: {html_path_polygons}")
+                
+                # Построение 3D-графика количества гласных
+                st.subheader("3D-график количества гласных (и-ы-у-о-а-э-и)")
+                fig_vowel_count = plot_3d_vowel_count(vowel_data, audio_path)
+                if fig_vowel_count:
+                    st.plotly_chart(fig_vowel_count)
+                
+                html_path_vowel_count = os.path.join(OUTPUT_DIR, f"{base_name}_vowel_count_3d_precise.html")
+                fig_vowel_count.write_html(html_path_vowel_count)
+                st.write(f"\nИнтерактивный график количества гласных сохранен в: {html_path_vowel_count}")
             else:
                 st.error("\nНе удалось извлечь данные о гласных для анализа.")
         else:
